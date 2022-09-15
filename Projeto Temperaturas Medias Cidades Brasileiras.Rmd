@@ -1,0 +1,221 @@
+---
+title: "Projeto temperaturas médias de Cidades Brasileiras"
+author: "Adauto de Galiza"
+output: html_document
+---
+### Objetivo: Explorar dados sobre temperaturas médias de cidades brasileiras
+
+### Sobre o DataSet: a base de dados contém mais de 8 milhões de registros sobre temperaturas médias por cidades de países do mundo inteiro. Cada linha do dataset representa uma temperatura média de um dia específico em alguma cidade do mundo.
+
+Carregando pacotes
+```{r message=FALSE, warning=FALSE}
+library("readr")
+library("data.table")
+library("dplyr")
+library("ggplot2")
+library("scales")
+library("knitr")
+library("rmarkdown")
+```
+Importando dados com `fread()`: esta função é indicada para importar dados de tabelas muito grandes por causa do seu poder de otimização 
+```{r}
+system.time(temperaturas_globais <- fread("TemperaturasGlobais.csv", encoding = "UTF-8"))
+paged_table(temperaturas_globais)
+```
+
+Filtrando do dataset original apenas as cidades onde país = Brazil
+```{r}
+cidadesbrasileiras <- subset(temperaturas_globais, Country == "Brazil")
+dim(cidadesbrasileiras)
+paged_table(head(cidadesbrasileiras))
+```
+
+
+
+Outra forma de obter o mesmo grupo de dados acima é utilizar as funções `select()` e `filter()` do `::dplyr`
+```{r eval=FALSE}
+cidadesbrasileiras %>%
+  select(dt, AverageTemperature, everything()) %>% 
+  filter(Country == "Brazil") # função everything() coloca depois colunas após as selecionadas anteriormente
+```
+
+```{r}
+dim(cidadesbrasileiras)
+paged_table(cidadesbrasileiras)
+
+```
+
+Verificando a tipagem dos dados no dataset
+```{r}
+str(cidadesbrasileiras)
+```
+
+Excluindo missing data para tratamentos exploratórios posteriores
+```{r}
+cidadesbrasileiras <- na.omit(cidadesbrasileiras)
+```
+
+Tratamento de datas: extraindo e criando colunas mês e ano para o novo dataset
+```{r}
+cidadesbrasileiras$dt <- as.POSIXct(cidadesbrasileiras$dt, format = '%Y-%m-%d') # definindo formato da data ano/mês/dia
+
+cidadesbrasileiras$Month <- month(cidadesbrasileiras$dt) # extraindo mês para nova coluna
+cidadesbrasileiras$Year <- year(cidadesbrasileiras$dt) # extraindo ano para nova coluna
+paged_table(cidadesbrasileiras)
+```
+
+Renomeando a coluna `Month` dos números para os nomes
+```{r}
+ cidadesbrasileiras <- cidadesbrasileiras %>% 
+  mutate(Mes = case_when(Month == "1" ~ "Janeiro",
+         Month == "2" ~ "Fevereiro",
+         Month == "3" ~ "Março",
+         Month == "4" ~ "Abril",
+         Month == "5" ~ "Maio",
+         Month == "6" ~ "Junho",
+         Month == "7" ~ "Julho",
+         Month == "8" ~ "Agosto",
+         Month == "9" ~ "Setembro",
+         Month == "10" ~ "Outubro",
+         Month == "11" ~ "Novembro",
+         Month == "12" ~ "Dezembro"))
+
+## Transformando a nova coluna do tipo caractere para fator
+cidadesbrasileiras$Mes <- as.factor(cidadesbrasileiras$Mes)
+class(cidadesbrasileiras$Mes)
+```
+
+Comparado tamanho do dataset original com novo conjunto de dados
+```{r}
+dim(temperaturas_globais)
+dim(cidadesbrasileiras)
+
+## Saimos de mais de 8 milhões de linhas para aproximadamente 450 mil
+```
+
+Qual a cobertura temporal do nosso dataset?
+```{r}
+min(cidadesbrasileiras$Year)
+max(cidadesbrasileiras$Year)
+# Possuímos dados de 1824 até 2013!
+```
+
+Qual o registro de menor temperatura e de maior temperatura no período? E em que cidade e ano?
+```{r}
+## Menor registro
+cidadesbrasileiras %>%
+  select(City, Year, AverageTemperature) %>%
+  slice_min(AverageTemperature, n = 1)
+
+## Maior registro
+cidadesbrasileiras %>%
+  select(City, Year, AverageTemperature) %>%
+  slice_max(AverageTemperature, n = 1)
+
+## O menor registro fica com Cricúma (1942) e Lages (1942) ambas com 9,59 ºC.
+## O maior registro fica com Mossoró com 30,49 ºC em 1998.
+```
+
+Na média quais as 10 cidades mais quentes no período?
+```{r}
+## Calculando média e filtrando as 10 cidades mais quentes
+
+top10_quentes <- cidadesbrasileiras %>%
+  select(City, AverageTemperature) %>% 
+  group_by(City) %>% 
+  summarise(media = mean(AverageTemperature)) %>% 
+  arrange(desc(media)) %>% 
+  slice_max(media, n = 10)
+kable(top10_quentes)
+```
+E quais as mais frias?
+```{r}
+## Calculando média e filtrando as 10 cidades mais frias
+
+top10_frias <- cidadesbrasileiras %>%
+  select(City, AverageTemperature) %>% 
+  group_by(City) %>% 
+  summarise(media = mean(AverageTemperature)) %>%
+  arrange(desc(media)) %>% 
+  slice_min(media, n = 10)
+kable(top10_frias)
+
+## Algumas cidades possuem médias idênticas. O slice neste caso incluí as duplicadas na contagem!
+```
+Qual a média de temperatura anual do Brasil ano a ano?
+```{r}
+media_br <- cidadesbrasileiras %>%
+  group_by(Year) %>%
+  select(Year, AverageTemperature) %>% 
+  summarise(media = mean(AverageTemperature))
+
+```
+
+```{r}
+paged_table(media_br)
+
+```
+
+Graficamente, temos:
+```{r}
+media_br %>% 
+  ggplot(aes(x = Year, y = media)) +
+  geom_line(colour = "#756bb1", size = 0.7, alpha = 2, linetype = "solid")  +
+  geom_point(size = 1.1) +
+  labs(title = "Evolução das temperaturas médias anuais (Brasil)") +
+  xlab("Ano") + ylab("Temperatura média") +
+  theme_bw(base_size = 10)
+
+## É possivel observar uma constante crescente das temperaturas médias nas cidades brasileiras
+## Também podemos observar temperaturas fora da curva nos anos inciais da série
+```
+
+Qual a evolução nos últimos 10 anos da nas temperatutas das 5 cidades mais quentes?
+```{r}
+
+## Necessário passar filtros com cidades e anos selecionados
+## Também é necessário reordernar a coluna Month para um objeto do tipo fator ordernado
+
+cidadesbrasileiras %>% 
+  filter(Year %in% c(1900, 1922, 1944, 1966, 1988, 2010) & City %in% c("Mossoró", "Parnaíba", "Boa Vista", "Fortaleza", "Caucaia")) %>%
+  mutate(Cidade = City) %>%
+  ggplot(aes(x = Month, y = AverageTemperature, color = Cidade)) +
+  geom_line() + 
+  facet_wrap(~ Year, nrow = 4) +
+  labs(title = "Evolução das temperaturas das cidades mais quentes do Brasil (Anos Selecionados)", x= "Mês", y = "Temperatura média") +
+  theme_bw(base_size = 10)
+
+## Disclaimer: algumas cidades estão com os registros de temperaturas igualmente duplicados nesta base de 
+## dados, como por exemplo Fortaleza e Sobral. Isto é possívelmente um problema de inconsistência da base.
+
+## Por este motivo, neste gráfico substituímos a cidade de sobral por caucaia.
+
+```
+
+Quais os meses mais quentes levando em consideração todas as cidades no período do dataset?
+```{r}
+
+## carregando ::forcats para reordenar fatores e aplicar no gráfico
+library(forcats)
+
+cidadesbrasileiras %>%
+  mutate(Mes = fct_reorder(Mes, AverageTemperature)) %>% 
+  group_by(Mes) %>% 
+  summarise(media_mensal = mean(AverageTemperature)) %>% 
+  arrange(media_mensal) %>% 
+  ggplot(aes(x=Mes, y = media_mensal, fill = media_mensal)) +
+  geom_col(show.legend = F) +
+  scale_fill_gradient(low="#bcbddc", high="#756bb1") +
+  xlab("") +
+  ylab("Temperatura Média Mensal") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+```
+
+
+
+
+ 
+
+
+
+
